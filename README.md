@@ -83,7 +83,8 @@ worlds are checked against the Python version (see Development below).
   end. One lattice per moon has an end in each, so it needs both puzzles.
 - **Survival:** the shield never recharges by itself, and turret hits cost
   14. Power packs restore shield and fuel. Buildings give cover.
-- **If the Lance fires:** you watch it destroy Halcyon (click to skip).
+- **If the Lance fires,** or you're killed and no one is left to stop it,
+  you watch it destroy Halcyon (click to skip).
 - **Hunter drone (optional):** it tracks you sector by sector once the first
   core falls.
 

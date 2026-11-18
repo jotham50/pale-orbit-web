@@ -125,9 +125,20 @@ const page_ = process.argv[2] || "index.html";
     const g = PALE_ORBIT, p = g.player;
     g.spawnBolt(new THREE.Vector3(p.x + 6, p.y + 1.5, -p.z), new THREE.Vector3(-1, 0, 0));
   });
-  await step(800);
-  const state = await page.evaluate(() => [PALE_ORBIT.moon.state, !!document.querySelector(".overlay.end")]);
-  check("shield at zero ends the game with the end screen", state[0] === "lost" && state[1], JSON.stringify(state));
+  for (let i = 0; i < 100; i++) {      // wait for the hit (the game clock stops when you die)
+    if (await page.evaluate(() => PALE_ORBIT.moon.state === "lost")) break;
+    await step(50);
+  }
+  await step(300);
+  const dying = await page.evaluate(() => [PALE_ORBIT.moon.state, PALE_ORBIT.finale, PALE_ORBIT.finaleReason]);
+  check("shield at zero: the player collapses and the Lance sequence starts",
+        dying[0] === "lost" && dying[1] && dying[2] === "shield", JSON.stringify(dying));
+  await page.keyboard.press("Enter");     // skip it
+  await step(300);
+  const state = await page.evaluate(() => [PALE_ORBIT.moon.state, !!document.querySelector(".overlay.end"),
+                                           (document.querySelector(".overlay.end .body") || {}).textContent]);
+  check("skipping shows the end screen", state[0] === "lost" && state[1] && /shield collapsed/.test(state[2]),
+        JSON.stringify(state));
 
   // 6. map pauses the clock
   await page.evaluate(() => PALE_ORBIT.newGame(2026));

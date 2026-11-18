@@ -572,6 +572,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
       this.hud = null; this.map = null;
       this.sensitivity = 0.12;
       this.shake = new THREE.Vector3();
+      this.eyeDrop = 0;      // how far the camera has sunk (when the player falls)
+      this.roll = 0;         // camera roll in degrees (when the player falls)
       this._buildGun();
       this.newGame(seed);
     }
@@ -593,6 +595,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
       this.hud = new HUD(this);
       this.map = new MapScreen(this);
       this.shotTimer = 0; this.beepTimer = 0;
+      this.eyeDrop = 0; this.roll = 0; this.finale = false;
+      this.gun.visible = true;
       if (moon) {
         const extra = moon.saveExtra || {};
         this.loadSector(moon.playerSector);
@@ -716,11 +720,40 @@ countdown. Chasms can only be crossed with the jetpack.`;
     }
 
     // ---- the Lance fires: destruction of Halcyon ------------------------
-    lanceFinale() {
+    /** Shield gone: the player collapses, then watches the Lance fire. */
+    playerDeath() {
       this.active = false;
       this.finale = true;
+      this.finaleReason = "shield";
+      this.mouseDown = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+      if (this.map.enabled) this.map.enabled = false;
+      this.hud.root.style.display = "none";
+      this.gun.visible = false;
+      this.sfx.play("explosion", .9, .7);
+      this.sfx.play("hit", 1, .5);
+      const red = el("div", "deathred", document.getElementById("ui"));
+      setTimeout(() => red.classList.add("on"), 20);
+      setTimeout(() => red.classList.remove("on"), 1700);
+      setTimeout(() => red.remove(), 3500);
+      const p = this.player, pitch0 = p.pitch;
+      this.tween(1.3, (t) => {
+        const e = 1 - (1 - t) * (1 - t);
+        this.eyeDrop = 2.2 * e;                  // down onto the ground
+        this.roll = -32 * e;                     // tipped onto one side
+        p.pitch = pitch0 + (25 - pitch0) * e;
+        this.shake.set(rand(-1, 1) * .08 * (1 - t), rand(-1, 1) * .08 * (1 - t), 0);
+      }, () => this.shake.set(0, 0, 0));
+      this.later(2.0, () => { if (this.finale) this.lanceFinale("shield"); });
+    }
+
+    lanceFinale(reason = "lance") {
+      this.active = false;
+      this.finale = true;
+      this.finaleReason = reason;
       if (document.pointerLockElement) document.exitPointerLock();
       this.hud.root.style.display = "none";          // a clear view for the finale
+      this.gun.visible = false;
       if (this.map.enabled) this.map.enabled = false;
       const sun = toLocal(this.sectorId, this.moon.sunDirection);
       // put Halcyon somewhere you can see it (it may be below the horizon)
@@ -746,16 +779,18 @@ countdown. Chasms can only be crossed with the jetpack.`;
 
       // 1. the camera swings round to Halcyon, the ground rumbles
       const p = this.player;
-      const eye = V(p.x, p.y + EYE_HEIGHT, p.z);
+      const eye = V(p.x, p.y + EYE_HEIGHT - this.eyeDrop, p.z);
       const to = planetPos.clone().sub(eye);
       const yaw1 = Math.atan2(to.x, -to.z) / DEG;
       const pitch1 = -Math.atan2(to.y, Math.hypot(to.x, to.z)) / DEG + 6;
-      const yaw0 = p.yaw, pitch0 = p.pitch;
+      const yaw0 = p.yaw, pitch0 = p.pitch, roll0 = this.roll;
+      const roll1 = reason === "shield" ? -12 : 0;   // still lying on the ground
       const dyaw = ((yaw1 - yaw0) % 360 + 540) % 360 - 180;
-      this.tween(1.4, (t) => {
+      this.tween(reason === "shield" ? 2.2 : 1.4, (t) => {
         const e = t * t * (3 - 2 * t);
         p.yaw = yaw0 + dyaw * e;
         p.pitch = pitch0 + (pitch1 - pitch0) * e;
+        this.roll = roll0 + (roll1 - roll0) * e;
       });
       this.tween(7.5, (t) => {
         const k = t < .45 ? .05 + t * .2 : Math.max(0, .35 * (1 - (t - .45) * 2));
@@ -854,7 +889,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
       if (!this.finale) return;
       this.finale = false;
       this.hud.root.style.display = "";
-      this.endScreen(false, "lance");
+      this.endScreen(false, this.finaleReason || "lance");
     }
 
     endScreen(won, reason = "") {
@@ -865,7 +900,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
       t.style.color = won ? "rgb(128,255,153)" : "rgb(255,89,77)";
       el("pre", "body", o, won
         ? `Every lattice destroyed in ${formatTime(this.moon.elapsed)}.\nHalcyon is safe.`
-        : (reason === "lance" ? "The Lance has fired. Halcyon is gone." : "Your shield collapsed."));
+        : (reason === "lance" ? "The Lance has fired. Halcyon is gone."
+          : "Your shield collapsed.\nWith no one left to stop it, the Lance fired. Halcyon is gone."));
       el("div", "seed", o, this.seedText());
       el("div", "begin", o, "press R to play a new moon");
     }
@@ -1809,8 +1845,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
           if (ev[1] === "lance") {
             this.lanceFinale();
           } else {
-            this.sfx.play("explosion", 1);
-            this.endScreen(false, ev[1]);
+            this.playerDeath();
           }
         }
       }
@@ -1867,8 +1902,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
 
     placeCamera() {
       const p = this.player;
-      this.camera.position.copy(V(p.x, p.y + EYE_HEIGHT, p.z)).add(this.shake);
-      this.camera.rotation.set(-p.pitch * DEG, -p.yaw * DEG, 0);
+      this.camera.position.copy(V(p.x, p.y + EYE_HEIGHT - this.eyeDrop, p.z)).add(this.shake);
+      this.camera.rotation.set(-p.pitch * DEG, -p.yaw * DEG, this.roll * DEG);
     }
 
     // ---- loop ------------------------------------------------------------
