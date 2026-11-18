@@ -48,9 +48,10 @@ worlds are checked against the Python version (see Development below).
 | F5 / F9 | save / load |
 | L | continue a saved game (title screen) |
 | D | toggle the hunter drone (title screen) |
+| T | choose the game length: 10 to 40 minutes at full power (title screen) |
 | S | choose a seed (title screen) |
 | R | new moon (after the game ends) |
-| Esc | pause and release the mouse |
+| Esc | pause and release the mouse (the pause menu has F5 save and Q quit to title) |
 
 ## How it plays
 
@@ -82,6 +83,7 @@ worlds are checked against the Python version (see Development below).
   end. One lattice per moon has an end in each, so it needs both puzzles.
 - **Survival:** the shield never recharges by itself, and turret hits cost
   14. Power packs restore shield and fuel. Buildings give cover.
+- **If the Lance fires:** you watch it destroy Halcyon (click to skip).
 - **Hunter drone (optional):** it tracks you sector by sector once the first
   core falls.
 

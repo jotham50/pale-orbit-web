@@ -274,3 +274,14 @@ test("map scrolling turns the sphere: centring and wrapping", () => {
     assert.ok(Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(((a[1] - b[1]) % 360 + 540) % 360 - 180) < 1e-9);
   }
 });
+
+test("game length option sets the Lance's charge time and is saved", () => {
+  const short = new Moon({ seed: 5, fullChargeTime: 600 }), long = new Moon({ seed: 5, fullChargeTime: 2400 });
+  assert.ok(Math.abs(short.timeToFire / long.timeToFire - 600 / 2400) < 0.01);
+  for (let i = 0; i < 2000 && short.state === "playing"; i++) short.update(1);
+  assert.equal(short.state, "lost");
+  assert.ok(short.elapsed < 700);
+  const m = new Moon({ seed: 5, fullChargeTime: 1800 });
+  assert.equal(Moon.fromSave(JSON.parse(JSON.stringify(m.saveState()))).fullChargeTime, 1800);
+  assert.deepEqual(L.worldSnapshot(new Moon({ seed: 5 })), L.worldSnapshot(m));   // same layout
+});

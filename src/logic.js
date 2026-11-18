@@ -254,8 +254,10 @@
       const o = Object.assign({
         seed: null, latticeCount: 6, minLen: 4, maxLen: 7, wardedFraction: 0.5,
         sealedCount: 3, chasmCount: 7, hunter: false, vaultCount: 2, relayCount: 3,
-        siloChance: 0.5,
+        siloChance: 0.5, fullChargeTime: Moon.FULL_CHARGE_TIME,
       }, opts);
+      // seconds for the Lance to charge at full power: the game length
+      this.fullChargeTime = o.fullChargeTime;
       this.seed = o.seed != null ? o.seed : Moon.randomSeed();
       this.siloChance = o.siloChance;
       this.rng = new PyRandom(this.seed);
@@ -884,7 +886,7 @@
       return this.refOutput ? live / this.refOutput : 0.0;
     }
 
-    get chargeRate() { return this.power / Moon.FULL_CHARGE_TIME; }
+    get chargeRate() { return this.power / this.fullChargeTime; }
 
     _powerAt(t, liveBySector) {
       const sun = sunDirectionAt(t);
@@ -900,7 +902,7 @@
       let t = this.elapsed, charge = this.charge;
       const step = Moon.PREDICT_STEP;
       while (charge < 1.0) {
-        const gain = this._powerAt(t + step / 2, live) / Moon.FULL_CHARGE_TIME * step;
+        const gain = this._powerAt(t + step / 2, live) / this.fullChargeTime * step;
         if (gain <= 0) return Infinity;
         if (charge + gain >= 1.0) return t + step * (1.0 - charge) / gain;
         charge += gain;
@@ -1231,6 +1233,7 @@
       const d = this.drone;
       return {
         version: Moon.SAVE_VERSION, seed: this.seed, hunter: d.enabled,
+        full_charge_time: this.fullChargeTime,
         elapsed: this.elapsed, charge: this.charge, state: this.state,
         player: { shield: this.player.shield, fuel: this.player.fuel },
         player_sector: this.playerSector,
@@ -1252,7 +1255,8 @@
       if (!data || data.version !== Moon.SAVE_VERSION) {
         throw new Error("the save is from a different version of the game");
       }
-      const moon = new Moon({ seed: data.seed, hunter: data.hunter });
+      const moon = new Moon({ seed: data.seed, hunter: data.hunter,
+                              fullChargeTime: data.full_charge_time || Moon.FULL_CHARGE_TIME });
       moon.elapsed = data.elapsed; moon.charge = data.charge; moon.state = data.state;
       moon.player.shield = data.player.shield; moon.player.fuel = data.player.fuel;
       moon.playerSector = data.player_sector;
@@ -1286,7 +1290,10 @@
     popEvents() { const ev = this.events; this.events = []; return ev; }
   }
   Object.assign(Moon, {
-    FULL_CHARGE_TIME: 1023.0, REGEN_DELAY: 1.5, PREDICT_STEP: 2.0,
+    // default game length: 1023 = 2**10 - 1, so the 10-bit counter ticks once a second
+    FULL_CHARGE_TIME: 1023.0,
+    // game lengths offered on the title screen (seconds at full power)
+    GAME_LENGTHS: [600, 900, 1023, 1200, 1500, 1800, 2400], REGEN_DELAY: 1.5, PREDICT_STEP: 2.0,
     PREDICT_HORIZON: 6 * 3600.0, SAVE_VERSION: 3,
   });
 
