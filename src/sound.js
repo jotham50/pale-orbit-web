@@ -91,6 +91,40 @@
 
   const scale = (s, g) => s.map((v) => v * g);
 
+  // ---- the Lance's hum: one loop per stage, louder never, faster and deeper --
+  const DRONE_STAGES = 11;   // stage = number of red rectangles counted down from the top
+
+  function droneStageParams(stage) {
+    return {
+      beats: [4, 5, 6, 8, 10, 12, 14, 16, 20, 24, 32][stage],          // throbs per 4 s loop
+      sub: 41.2 * Math.pow(27.5 / 41.2, stage / (DRONE_STAGES - 1)),  // sub-bass, Hz
+      subGain: 0.25 + 0.075 * stage,
+      sharp: 1 + 0.35 * stage,                                         // throb shape
+    };
+  }
+
+  function droneStage(stage) {
+    const P = droneStageParams(stage), seconds = 4;
+    const hum = lowpass(mix([tone(55, 55, seconds, "saw"), tone(55.6, 55.6, seconds, "saw"),
+                             tone(82.5, 82.5, seconds)], [0.5, 0.5, 0.4]), 420);
+    const sub = tone(P.sub, P.sub, seconds);
+    const out = new Float32Array(hum.length);
+    for (let i = 0; i < out.length; i++) {
+      const t = i / RATE;
+      const pulse = Math.pow(0.5 + 0.5 * Math.cos(2 * Math.PI * P.beats * t / seconds), P.sharp);
+      out[i] = (hum[i] * (1 - 0.03 * stage) + sub[i] * P.subGain) * (0.45 + 0.55 * pulse);
+    }
+    return loopCrossfade(out, 0.25);
+  }
+
+  /** Scale to a fixed loudness (RMS) so every hum stage sounds equally loud. */
+  function normaliseRms(s, target = 0.22) {
+    let sum = 0;
+    for (const v of s) sum += v * v;
+    const k = target / Math.sqrt(sum / s.length || 1);
+    return s.map((v) => Math.max(-0.98, Math.min(0.98, v * k)));
+  }
+
   const RECIPES = {
     laser: () => envelope(lowpass(tone(1800, 220, 0.22, "square", 0.5), 6000, 1500),
                           0.002, null, 2),
@@ -163,8 +197,17 @@
       this.out = this.ctx.createGain();
       this.out.gain.value = 0.5;
       this.out.connect(this.ctx.destination);
+      this.droneBuffers = [];
+      for (let st = 0; st < DRONE_STAGES; st++) {
+        const data = normaliseRms(droneStage(st));
+        const buf = this.ctx.createBuffer(1, data.length, RATE);
+        buf.copyToChannel(data, 0);
+        this.droneBuffers.push(buf);
+      }
+      this.droneStage = -1;
+      this.drone = null;
       this.loops = {};
-      for (const name of ["jetpack", "drone"]) {
+      for (const name of ["jetpack"]) {
         const src = this.ctx.createBufferSource();
         src.buffer = this.buffers[name];
         src.loop = true;
@@ -187,19 +230,44 @@
       src.start();
     }
 
-    setLoops(jet, drone, dronePitch) {
+    /**
+     * jet: jetpack hiss volume. drone: the Lance's hum volume (it grows as
+     * the Lance charges). stage: 0..10, which hum loop (faster throb, deeper
+     * bass; it crossfades when the stage changes).
+     */
+    setLoops(jet, drone, stage = 0) {
       if (!this.ctx) return;
       const g = this.muted ? 0 : this.master;
       const t = this.ctx.currentTime;
       this.loops.jetpack.gain.gain.setTargetAtTime(jet * g, t, 0.03);
-      this.loops.drone.gain.gain.setTargetAtTime(drone * g, t, 0.1);
-      this.loops.drone.src.playbackRate.setTargetAtTime(dronePitch, t, 0.2);
+      const vol = drone * g;
+      stage = Math.max(0, Math.min(DRONE_STAGES - 1, stage));
+      if (stage !== this.droneStage) {
+        const old = this.drone;
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.droneBuffers[stage];
+        src.loop = true;
+        const gain = this.ctx.createGain();
+        gain.gain.value = 0;
+        src.connect(gain).connect(this.out);
+        src.start();
+        gain.gain.setTargetAtTime(vol, t, 0.25);
+        if (old) {
+          old.gain.gain.setTargetAtTime(0, t, 0.25);
+          old.src.stop(t + 2);
+        }
+        this.drone = { src, gain };
+        this.droneStage = stage;
+      } else if (this.drone) {
+        this.drone.gain.gain.setTargetAtTime(vol, t, 0.1);
+      }
     }
 
     toggleMute() { this.muted = !this.muted; return this.muted; }
   }
 
-  const api = { SoundBoard, SOUND_RECIPES: RECIPES, SOUND_RATE: RATE, normaliseSound: normalise };
+  const api = { SoundBoard, SOUND_RECIPES: RECIPES, SOUND_RATE: RATE, normaliseSound: normalise,
+                droneStage, droneStageParams, normaliseRms, DRONE_STAGES };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.PO = Object.assign(root.PO || {}, api);
 })(typeof globalThis !== "undefined" ? globalThis : this);

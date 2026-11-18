@@ -27,6 +27,15 @@
   const DEG = Math.PI / 180;
   const SAVE_KEY = "pale_orbit_save";
 
+  /** How many rectangles are red counting down from the top of the counter
+   *  (0..10). It only ever goes up, faster and faster towards the end. */
+  function lanceStage(charge, bits = BINARY_BITS) {
+    const v = binaryCounter(charge, bits);
+    let n = 0;
+    for (let i = bits - 1; i >= 0 && (v >> i & 1); i--) n++;
+    return n;
+  }
+
   function binaryCounter(charge, bits = BINARY_BITS) {
     const top = (1 << bits) - 1;
     return charge >= 1 ? top : Math.min(top - 1, Math.floor(charge * top + 1e-6));
@@ -597,6 +606,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
       this.shotTimer = 0; this.beepTimer = 0;
       this.eyeDrop = 0; this.roll = 0; this.finale = false;
       this.gun.visible = true;
+      this.camera.fov = 75; this.camera.updateProjectionMatrix();
       if (moon) {
         const extra = moon.saveExtra || {};
         this.loadSector(moon.playerSector);
@@ -889,7 +899,153 @@ countdown. Chasms can only be crossed with the jetpack.`;
       if (!this.finale) return;
       this.finale = false;
       this.hud.root.style.display = "";
-      this.endScreen(false, this.finaleReason || "lance");
+      if (this.finaleReason === "won") this.endScreen(true);
+      else this.endScreen(false, this.finaleReason || "lance");
+    }
+
+    /** Every core destroyed: the Lance sputters out, breaks up and sinks. */
+    victoryFinale() {
+      this.active = false;
+      this.finale = true;
+      this.finaleReason = "won";
+      this.mouseDown = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+      if (this.map.enabled) this.map.enabled = false;
+      this.hud.root.style.display = "none";
+      this.gun.visible = false;
+      const p = this.player;
+      const additive = (c, a) => new THREE.MeshBasicMaterial({
+        color: new THREE.Color(...c), transparent: true, opacity: a, depthWrite: false,
+        blending: THREE.AdditiveBlending });
+      const lookAtPoint = (target, duration, extraPitch = 0) => {
+        const eye = V(p.x, p.y + EYE_HEIGHT, p.z);
+        const to = target.clone().sub(eye);
+        const yaw1 = Math.atan2(to.x, -to.z) / DEG;
+        const pitch1 = -Math.atan2(to.y, Math.hypot(to.x, to.z)) / DEG + extraPitch;
+        const yaw0 = p.yaw, pitch0 = p.pitch;
+        const dyaw = ((yaw1 - yaw0) % 360 + 540) % 360 - 180;
+        this.tween(duration, (t) => {
+          const e = t * t * (3 - 2 * t);
+          p.yaw = yaw0 + dyaw * e;
+          p.pitch = pitch0 + (pitch1 - pitch0) * e;
+        });
+      };
+      const base = this.lanceBase.clone(), top = this.lanceTop.clone();
+      const mid = base.clone().lerp(top, .62);
+      // lighten the spire so it stands out against the black sky
+      this.lanceSpire.material.color.setRGB(.32, .32, .36);
+
+      // 1. look at the Lance on the horizon, zooming in on it
+      lookAtPoint(mid, 1.6, 0);
+      const zoom = (to, duration, delay = 0) => {
+        let from = null;
+        this.tween(duration, (t) => {
+          if (from === null) from = this.camera.fov;
+          this.camera.fov = from + (to - from) * t * t * (3 - 2 * t);
+          this.camera.updateProjectionMatrix();
+        }, null, delay);
+      };
+      zoom(42, 2.0, 0.4);
+      this.sfx.play("power_up", .7, .5);
+
+      // 2. its tip sputters and dies, sparking
+      const tip = this.lanceTip;
+      tip.material.blending = THREE.AdditiveBlending;
+      this.tween(2.2, (t) => {
+        const flicker = Math.random() < .35 ? 0 : 1;
+        tip.scale.setScalar((60 + 120 * Math.sin(t * 30) ** 2) * (1 - t) * flicker + 1);
+        tip.material.opacity = (1 - t) * .9;
+      }, () => { tip.visible = false; }, 1.0);
+      for (let i = 0; i < 6; i++) {
+        this.later(1.2 + i * .3, () => {
+          const s = glowSprite(this.sky, [.6, .8, 1], .9, 25);
+          s.material.blending = THREE.AdditiveBlending;
+          s.position.copy(top).add(new THREE.Vector3(rand(-12, 12), rand(-20, 4), rand(-12, 12)));
+          this.tween(.35, (t) => { s.material.opacity = .9 * (1 - t); s.scale.setScalar(25 + 40 * t); });
+          this.removeLater(s, .4);
+          this.sfx.play("deflect", .4, rand(.4, .7));
+        });
+      }
+
+      // 3. explosions climb the spire, it breaks apart and sinks into dust
+      this.later(3.4, () => {
+        const spire = this.lanceSpire;
+        spire.visible = false;
+        const n = 7, h = 230 / n;
+        const pieces = [];
+        for (let i = 0; i < n; i++) {
+          const piece = new THREE.Mesh(GEO.box, litMat([.32, .32, .36]));
+          piece.material.emissive = new THREE.Color(0, 0, 0);
+          piece.scale.set(14, h * .96, 14);
+          piece.position.copy(base).add(new THREE.Vector3(0, h * (i + .5), 0));
+          this.sky.add(piece);
+          pieces.push(piece);
+        }
+        pieces.forEach((piece, i) => {
+          const delay = i * .22;
+          this.later(delay, () => {
+            const boom = glowSprite(this.sky, [1, .6, .25], 1, 90);
+            boom.material.blending = THREE.AdditiveBlending;
+            boom.position.copy(piece.position).add(new THREE.Vector3(0, h / 2, 0));
+            this.tween(.8, (t) => { boom.scale.setScalar(90 + 260 * t); boom.material.opacity = 1 - t; });
+            this.spark(boom.position.clone(), [1, .7, .3], 10, 4, 60);
+            this.removeLater(boom, .75);
+            if (i % 2 === 0) this.sfx.play("explosion", .55, rand(.45, .7));
+          });
+          const tilt = new THREE.Vector3(rand(-.5, .5), 0, rand(-.5, .5)).multiplyScalar(1 + i * .3);
+          const drop = h * (i + .5) + 60;
+          const start = piece.position.clone();
+          const drift = new THREE.Vector3(rand(-1, 1), 0, rand(-1, 1)).multiplyScalar(10 + i * 6);
+          this.tween(3.2, (t) => {
+            const e = t * t;
+            piece.material.emissive.setRGB(.55 * Math.min(1, t * 3), .18 * Math.min(1, t * 3), .03);
+            piece.position.copy(start).addScaledVector(drift, t).add(new THREE.Vector3(0, -drop * e, 0));
+            piece.rotation.set(tilt.x * e, 0, tilt.z * e);
+          }, () => { piece.visible = false; }, delay + .3);
+        });
+        // a rolling dust cloud at the foot of the Lance
+        for (let k = 0; k < 12; k++) {
+          const d = glowSprite(this.sky, [.6, .57, .55], 0, 90);
+          d.position.copy(base).add(new THREE.Vector3(rand(-60, 60), rand(10, 70), rand(-60, 60)));
+          this.tween(4.5, (t) => {
+            d.material.opacity = Math.sin(Math.PI * t) * .7;
+            d.scale.setScalar(90 + 300 * t);
+          }, null, 1.0 + k * .12);
+        }
+        this.tween(3.5, (t) => {
+          const k = .12 * Math.sin(Math.PI * t);
+          this.shake.set(rand(-1, 1) * k, rand(-1, 1) * k, 0);
+        }, () => this.shake.set(0, 0, 0), .5);
+      });
+
+      // 4. turn to Halcyon, safe in the sky, and celebrate
+      this.later(8.2, () => {
+        let pl = toLocal(this.sectorId, PLANET_DIRECTION);
+        if (pl[1] < 0.2) {
+          const hh = Math.hypot(pl[0], pl[2]) || 1;
+          pl = PO.norm([pl[0] / hh, 0.45, pl[2] / hh]);
+        }
+        const planetPos = V(pl[0] * 1400, pl[1] * 1400, pl[2] * 1400);
+        if (!this.planet) {
+          const sun = toLocal(this.sectorId, this.moon.sunDirection);
+          const g = shadedSphereGeometry(sun, [.35, .6, 1], [.03, .05, .12]);
+          this.planet = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true }));
+          this.planet.scale.setScalar(380);
+          this.sky.add(this.planet);
+        }
+        this.planetTimer = 1e9;
+        this.planet.position.copy(planetPos);
+        this.planet.visible = true;
+        lookAtPoint(planetPos, 2.0);
+        zoom(75, 2.0);
+        const halo = glowSprite(this.sky, [.5, .8, 1], 0, 700);
+        halo.material.blending = THREE.AdditiveBlending;
+        halo.position.copy(planetPos);
+        this.tween(2.5, (t) => { halo.material.opacity = .5 * Math.sin(Math.PI * Math.min(1, t * 1.4)); }, null, 1.2);
+        this.later(1.2, () => this.sfx.play("fanfare", 1, .8));
+        this.later(2.0, () => this.sfx.play("fanfare", .8, 1.0));
+      });
+      this.later(12.5, () => this.finishFinale());
     }
 
     endScreen(won, reason = "") {
@@ -1051,8 +1207,9 @@ countdown. Chasms can only be crossed with the jetpack.`;
       let lx = ld[0], lz = ld[2];
       const ll = Math.hypot(lx, lz);
       if (ll > .05) { lx /= ll; lz /= ll; } else { lx = 0; lz = 1; }
-      mk(this.sky, GEO.box, litMat([.12, .12, .14]),
-         { x: lx * 420, z: lz * 420, scale: [14, 230, 14], bottom: true });
+      this.lanceSpire = mk(this.sky, GEO.box, litMat([.12, .12, .14]),
+                           { x: lx * 420, z: lz * 420, scale: [14, 230, 14], bottom: true });
+      this.lanceBase = V(lx * 420, 0, lz * 420);
       this.lanceTip = glowSprite(this.sky, [1, .3, .2], .8, 60, { x: lx * 420, y: 236, z: lz * 420 });
       this.lanceTop = V(lx * 420, 236, lz * 420);
     }
@@ -1839,8 +1996,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
           this.hud.say({ shield: "+ shield", fuel: "+ jetpack fuel", combo: "+ shield & fuel" }[ev[1]], [.6, 1, .7]);
           this.sfx.play("pickup", .7);
         } else if (kind === "won") {
-          this.sfx.play("fanfare", 1, .8);
-          this.endScreen(true);
+          this.victoryFinale();
         } else if (kind === "lost") {
           if (ev[1] === "lance") {
             this.lanceFinale();
@@ -1925,10 +2081,12 @@ countdown. Chasms can only be crossed with the jetpack.`;
         if (v.ward) v.ward.rotation.y += 20 * DEG * dt;
         this.syncCore(v);
       }
-      if (!this.active) { this.sfx.setLoops(0, 0, 1); return; }
+      if (!this.active) { this.sfx.setLoops(0, 0, lanceStage(this.moon.charge)); return; }
       this.updateLighting(dt);
       const charge = this.moon.charge;
-      this.sfx.setLoops(this.player.thrusting ? .5 : 0, .25 + .35 * charge, .8 + .7 * charge);
+      // the Lance's hum grows louder as it charges, and throbs faster with a
+      // deeper bass each time the topmost black rectangle turns red
+      this.sfx.setLoops(this.player.thrusting ? .5 : 0, .25 + .35 * charge, lanceStage(charge));
       if (this.moon.timeToFire < 120) {
         this.beepTimer -= dt;
         if (this.beepTimer <= 0) {
@@ -2164,5 +2322,5 @@ countdown. Chasms can only be crossed with the jetpack.`;
     requestAnimationFrame(frame);
   }
 
-  root.PO = Object.assign(root.PO || {}, { Game, boot, binaryCounter });
+  root.PO = Object.assign(root.PO || {}, { Game, boot, binaryCounter, lanceStage });
 })(typeof globalThis !== "undefined" ? globalThis : this);
