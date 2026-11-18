@@ -1,0 +1,12 @@
+{
+  "name": "pale-orbit-web",
+  "version": "1.0.0",
+  "description": "Pale Orbit, the browser version: a first-person sci-fi moon puzzle shooter",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "build": "node tools/build_single.js",
+    "playtest": "node tools/playtest.js",
+    "screenshots": "node tools/screenshots.js screenshots"
+  }
+}

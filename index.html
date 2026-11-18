@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pale Orbit</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: "DejaVu Sans Mono", Consolas, Menlo, "Courier New", monospace; color: #fff;
+         user-select: none; -webkit-user-select: none; }
+  #view, #ui { position: fixed; inset: 0; }
+  #view canvas { display: block; }
+  #ui { pointer-events: none; font-size: 1.6vh; }
+  .hud div, .hud span, .overlay div { white-space: pre; }
+  .hud { position: absolute; inset: 0; }
+  .crosshair { position: absolute; left: 50%; top: 50%; width: 2.2vh; height: 2.2vh;
+               transform: translate(-50%, -50%); }
+  .crosshair::before, .crosshair::after { content: ""; position: absolute; background: rgba(255,255,255,.8); }
+  .crosshair::before { left: 50%; top: 0; width: .4vh; height: 100%; transform: translateX(-50%); }
+  .crosshair::after { top: 50%; left: 0; height: .4vh; width: 100%; transform: translateY(-50%); }
+  .timerbox { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 62vh;
+              background: rgba(0,0,0,.45); text-align: center; padding: .4vh 0 .7vh; }
+  .lance-label { color: rgb(255,153,128); font-size: 1.5vh; }
+  .timer { font-size: 4.6vh; line-height: 1; }
+  .powerbar { margin: .5vh auto 0; width: 50vh; height: 1.2vh; background: rgba(255,255,255,.15); }
+  .powerfill { height: 100%; background: rgb(255,89,64); }
+  .powertext { font-size: 1.35vh; color: rgba(255,255,255,.75); margin-top: .3vh; }
+  .topleft { position: absolute; top: 2vh; left: 2.5vh; }
+  .sector { font-size: 2.3vh; }
+  .sun { font-size: 1.5vh; color: rgb(255,217,128); margin-top: .6vh; }
+  .dronetext { font-size: 1.5vh; margin-top: .6vh; }
+  .bottomleft { position: absolute; left: 2.5vh; bottom: 2vh; width: 32vh; }
+  .bar { margin-top: 1vh; }
+  .barlabel { font-size: 1.5vh; color: rgba(255,255,255,.85); }
+  .barback { height: 2.2vh; background: rgba(0,0,0,.55); }
+  .barfill { height: 100%; width: 100%; }
+  .bottomright { position: absolute; right: 9vh; bottom: 2vh; font-size: 1.5vh; }
+  .lattitle { color: rgba(255,255,255,.7); margin-bottom: .6vh; }
+  .latrow { height: 3.5vh; display: flex; align-items: center; }
+  .latsq { display: inline-block; width: 2vh; height: 2vh; margin-right: 1vh; }
+  .bits { position: absolute; right: 2.5vh; top: 26vh; display: flex; flex-direction: column;
+          align-items: center; }
+  .bitslabel { color: rgb(255,115,102); font-size: 1.2vh; margin-bottom: .5vh; }
+  .bit { width: 3.4vh; height: 2.8vh; background: #000; border: .4vh solid rgba(140,140,153,.9);
+         margin: .3vh 0; }
+  .bit.on { background: rgb(242,31,26); }
+  .messages { position: absolute; left: 0; right: 0; bottom: 22vh; display: flex;
+              flex-direction: column-reverse; align-items: center; }
+  .msg { font-size: 2vh; margin: .3vh 0; transition: opacity 1s; text-shadow: 0 0 .4vh #000; }
+  .msg.fade { opacity: 0; }
+  .hint { position: absolute; bottom: 1vh; left: 0; right: 0; text-align: center;
+          font-size: 1.3vh; color: rgba(255,255,255,.45); }
+  .hitflash { position: absolute; inset: 0; background: rgba(255,51,26,.3); transition: opacity .3s; }
+  .hitflash.fade { opacity: 0; }
+  .mapcanvas { position: absolute; inset: 0; }
+  .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.86); pointer-events: auto;
+             display: flex; flex-direction: column; align-items: center; justify-content: center;
+             text-align: center; cursor: pointer; }
+  .overlay.end, .overlay.pause { background: rgba(0,0,0,.7); }
+  .title-text { font-size: 8vh; color: rgb(191,235,255); }
+  .title-text.small { font-size: 6vh; }
+  .seed { font-size: 1.8vh; color: rgb(255,204,128); margin: 1.4vh 0; }
+  .story { font: inherit; font-size: 1.85vh; color: rgba(255,255,255,.88); margin: 1vh 0; }
+  .controls { font: inherit; font-size: 1.6vh; color: rgb(255,204,128); margin: 1.5vh 0; }
+  .option { font-size: 2vh; margin: .6vh 0; }
+  .continue { font-size: 2vh; color: rgb(153,255,179); margin: .6vh 0; }
+  .begin { font-size: 2.2vh; margin-top: 2vh; }
+  .body { font: inherit; font-size: 2.4vh; margin: 1vh 0; }
+  #nowebgl { display: none; position: fixed; inset: 0; align-items: center; justify-content: center;
+             text-align: center; font-size: 2.4vh; padding: 4vh; }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="ui"></div>
+<div id="nowebgl">Pale Orbit needs WebGL. Try a recent version of Chrome, Edge or Firefox.</div>
+<script src="vendor/three.min.js"></script>
+<script src="src/rng.js"></script>
+<script src="src/logic.js"></script>
+<script src="src/sound.js"></script>
+<script src="src/textures.js"></script>
+<script src="src/game.js"></script>
+<script>
+  try { PO.boot(); } catch (e) {
+    console.error(e);
+    document.getElementById("nowebgl").style.display = "flex";
+    document.getElementById("nowebgl").textContent = "Pale Orbit could not start: " + e.message;
+  }
+</script>
+</body>
+</html>
