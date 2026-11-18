@@ -619,7 +619,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
     seedText() {
       const s = this.moon.seed;
       const page = (location.pathname.split("/").pop() || "index.html");
-      return `MOON SEED ${s}   (replay this layout: open ${page}?seed=${s}, or press S on the title screen)`;
+      return `MOON SEED ${s}\nreplay this layout: open ${page}?seed=${s}, or press S on the title screen`;
     }
 
     overlayBox(cls) {
@@ -1645,7 +1645,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
           const len = Math.abs(axis[0]) + Math.abs(axis[1]);
           if (len === 0) continue;
           const d = [Math.sign(axis[0]), 0, Math.sign(axis[1])];
-          const hit = [0.4, 1.0, EYE_HEIGHT].some((h) => this.blocked(p.x, p.y + h, p.z, d, len + 0.6));
+          const hit = [0.7, 1.4, EYE_HEIGHT].some((h) => this.blocked(p.x, p.y + h, p.z, d, len + 0.6));
           if (!hit) { p.x += axis[0]; p.z += axis[1]; }
         }
       }

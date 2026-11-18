@@ -216,6 +216,28 @@ const page_ = process.argv[2] || "index.html";
   await gameWait(0.3);
   const arrived = await page.evaluate(() => PALE_ORBIT.sectorId);
   check("a powered transporter takes you to the sealed sector", arrived === tp, `(${arrived} vs ${tp})`);
+  // walk onto a powered transporter pad with the keyboard (it has a raised base)
+  const walk = await page.evaluate(() => {
+    const g = PALE_ORBIT, m = g.moon;
+    const t = m.teleporters.find((x) => x.puzzle !== null);
+    t.active = true;
+    g.loadSector(t.sector); g.begin(true);
+    // approach between two of the six posts (they stand at 0, 60, 120... degrees)
+    const a = 30 * Math.PI / 180;
+    Object.assign(g.player, { x: t.x + Math.cos(a) * 7, z: t.z + Math.sin(a) * 7, y: 0, vy: 0,
+                              yaw: Math.atan2(-Math.cos(a), -Math.sin(a)) * 180 / Math.PI,
+                              pitch: 0 });
+    window.__padStart = { x: g.player.x, z: g.player.z };
+    g.gateCooldown = 0;
+    return t.dest;
+  });
+  await page.keyboard.down("KeyW");
+  await gameWait(1.5);
+  await page.keyboard.up("KeyW");
+  const walked = await page.evaluate(() => PALE_ORBIT.sectorId);
+  if (walked !== walk) console.log("pad walk ended at", await page.evaluate(() => JSON.stringify(PALE_ORBIT.player)));
+  check("walking onto a powered transporter pad uses it", walked === walk, `(${walked} vs ${walk})`);
+
   const fall = await page.evaluate(() => {
     const g = PALE_ORBIT, m = g.moon, ch = m.chasms[0];
     g.loadSector(ch.sector); g.begin(true);
