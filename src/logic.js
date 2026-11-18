@@ -84,6 +84,20 @@
     return [Math.asin(y / r) * RAD2DEG, Math.atan2(z, x) * RAD2DEG];
   }
 
+  /**
+   * Latitude/longitude (degrees) of a sector on the survey map after the
+   * map has been turned: yaw spins the moon east-west, pitch tilts it
+   * north-south. Turning the whole sphere (rather than sliding a flat
+   * picture) lets the map scroll and wrap in every direction.
+   */
+  function mapLatLon(faceIndex, yawDeg = 0, pitchDeg = 0) {
+    let [x, y, z] = norm(faceCentre(faceIndex));
+    const a = yawDeg * DEG2RAD, b = pitchDeg * DEG2RAD;
+    [x, z] = [x * Math.cos(a) + z * Math.sin(a), -x * Math.sin(a) + z * Math.cos(a)];
+    [x, y] = [x * Math.cos(b) + y * Math.sin(b), -x * Math.sin(b) + y * Math.cos(b)];
+    return [Math.asin(Math.max(-1, Math.min(1, y))) * RAD2DEG, Math.atan2(z, x) * RAD2DEG];
+  }
+
   function norm(v) {
     const r = Math.sqrt(sumArr(v.map((c) => c * c)));
     return v.map((c) => c / r);
@@ -1311,7 +1325,7 @@
 
   const api = {
     Moon, Silo, SwitchPuzzle, SlidePuzzle, Chasm, PlayerState, formatTime, worldSnapshot,
-    icosahedronAdjacency, faceLatLon, faceNormal, localFrame, toLocal, norm, dot,
+    icosahedronAdjacency, faceLatLon, mapLatLon, faceNormal, localFrame, toLocal, norm, dot,
     sunDirectionAt, sectorSunlight, outputFor, gatePosition, facingVector, edgeKey, edgeEnds,
     SECTOR_NAMES, LATTICE_COLOURS, SUN_DIRECTION, DAY_LENGTH, MIN_OUTPUT, MAX_OUTPUT,
     SECTOR_HALF_SIZE, GATE_RADIUS, SPAWN_CLEAR_RADIUS, RELAY_RADIUS, BEAM_HEIGHT, DRONE,

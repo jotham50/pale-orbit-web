@@ -261,3 +261,16 @@ test("format time", () => {
   assert.equal(L.formatTime(754), "12:34");
   assert.equal(L.formatTime(Infinity), "--:--");
 });
+
+test("map scrolling turns the sphere: centring and wrapping", () => {
+  for (let i = 0; i < 20; i++) {
+    const [lat, lon] = L.faceLatLon(i);
+    const [clat, clon] = L.mapLatLon(i, lon, lat);
+    assert.ok(Math.abs(clat) < 1e-9 && Math.abs(clon) < 1e-9);     // centred on the map
+    assert.deepEqual(L.mapLatLon(i).map((v) => v.toFixed(9)),
+                     L.faceLatLon(i).map((v) => v.toFixed(9)));  // no turn = original map
+    // a full turn either way brings everything back
+    const a = L.mapLatLon(i, 37, -12), b = L.mapLatLon(i, 37 + 360, -12 - 360);
+    assert.ok(Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(((a[1] - b[1]) % 360 + 540) % 360 - 180) < 1e-9);
+  }
+});

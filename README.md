@@ -43,6 +43,7 @@ worlds are checked against the Python version (see Development below).
 | Space (hold) | jetpack (refuels slowly on the ground) |
 | Shift | run |
 | Tab | survey map (pauses the game) |
+| Arrows / WASD / drag, C | while the map is open: scroll it (the moon turns, wrapping every way) / centre on you |
 | M | mute / unmute sound |
 | F5 / F9 | save / load |
 | L | continue a saved game (title screen) |

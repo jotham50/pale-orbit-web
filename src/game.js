@@ -392,9 +392,26 @@ countdown. Chasms can only be crossed with the jetpack.`;
       this.game = game;
       this.canvas = el("canvas", "mapcanvas", document.getElementById("ui"));
       this.canvas.style.display = "none";
+      this.yaw = 0;      // how far the moon is turned east-west on the map (degrees)
+      this.pitch = 0;    // and north-south
     }
     get enabled() { return this.canvas.style.display !== "none"; }
-    set enabled(v) { this.canvas.style.display = v ? "block" : "none"; if (v) this.draw(); }
+    set enabled(v) {
+      this.canvas.style.display = v ? "block" : "none";
+      if (v) { this.centre(); this.draw(); }
+    }
+
+    /** Turn the map so the sector you're in is in the middle. */
+    centre() {
+      const [lat, lon] = PO.faceLatLon(this.game.sectorId);
+      this.yaw = lon; this.pitch = lat;
+    }
+
+    scroll(dYaw, dPitch) {
+      this.yaw = ((this.yaw + dYaw) % 360 + 540) % 360 - 180;
+      this.pitch = ((this.pitch + dPitch) % 360 + 540) % 360 - 180;
+      this.draw();
+    }
 
     draw() {
       const cnv = this.canvas, m = this.game.moon;
@@ -419,11 +436,16 @@ countdown. Chasms can only be crossed with the jetpack.`;
       text("SURVEY CHART - KESSAR-4", 0, H / 2 + .1, 1.2, "rgb(179,230,255)");
       text(`PAUSED  -  press TAB to resume      MOON SEED ${m.seed}`, 0, H / 2 + .06, .75,
            "rgb(255,204,128)");
+      text("scroll: arrow keys / WASD or drag with the mouse      C: centre on you",
+           0, H / 2 + .025, .65, "rgba(255,255,255,0.7)");
       text("lines = gates (white open, red sealed, amber locked, brown rockfall); lines at the " +
            "edges wrap round the moon\nyellow = sunlit   red ring = sealed   amber ring = vault" +
            "   purple = transporter\nlattice links appear once both cores are found",
            0, -H / 2 - .045, .65, "rgba(255,255,255,0.6)");
-      const pos = (s) => [s.lon / 180 * W / 2, s.lat / 90 * H / 2];
+      const pos = (s) => {
+        const [lat, lon] = PO.mapLatLon(s.id, this.yaw, this.pitch);
+        return [lon / 180 * W / 2, lat / 90 * H / 2];
+      };
       const line = (a, b, colour, thick) => {
         ctx.strokeStyle = colour; ctx.lineWidth = Math.max(1, thick * U);
         ctx.beginPath(); ctx.moveTo(...P(...a)); ctx.lineTo(...P(...b)); ctx.stroke();
@@ -475,8 +497,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
       });
       for (const t of m.teleporters) {
         if (t.puzzle !== null && m.sectors[t.sector].visited) {
-          line(pos(m.sectors[t.sector]), pos(m.sectors[t.dest]),
-               `rgba(217,153,255,${t.active ? .8 : .3})`, .003);
+          wrapped(pos(m.sectors[t.sector]), pos(m.sectors[t.dest]),
+                  `rgba(217,153,255,${t.active ? .8 : .3})`, .003);
         }
       }
       for (const s of m.sectors) {
@@ -1687,6 +1709,12 @@ countdown. Chasms can only be crossed with the jetpack.`;
     // ---- loop ------------------------------------------------------------
     update(dt) {
       this._runTweens(dt);
+      if (this.map && this.map.enabled) {
+        const k = this.keys, speed = 90 * dt;
+        const dx = (k.has("ArrowRight") || k.has("KeyD") ? 1 : 0) - (k.has("ArrowLeft") || k.has("KeyA") ? 1 : 0);
+        const dy = (k.has("ArrowUp") || k.has("KeyW") ? 1 : 0) - (k.has("ArrowDown") || k.has("KeyS") ? 1 : 0);
+        if (dx || dy) this.map.scroll(dx * speed, dy * speed);
+      }
       this.placeCamera();
       this.scene.updateMatrixWorld();
       if (this.hud) this.hud.update();
@@ -1821,6 +1849,10 @@ countdown. Chasms can only be crossed with the jetpack.`;
         this.active = !this.map.enabled;
         return;
       }
+      if (this.map.enabled) {
+        if (code === "KeyC") { this.map.centre(); this.map.draw(); }
+        return;     // the game is paused: ignore save/load etc. while the map is up
+      }
       if (code === "F5") this.saveGame();
       if (code === "F9") { this.loadGame(); return; }
       if (code === "KeyM") {
@@ -1845,6 +1877,11 @@ countdown. Chasms can only be crossed with the jetpack.`;
     }
 
     onMouseMove(e) {
+      if (this.map && this.map.enabled && (e.buttons & 1)) {
+        // drag the map: the moon turns under the mouse
+        this.map.scroll(-e.movementX * 0.25, e.movementY * 0.25);
+        return;
+      }
       if (!this.active || document.pointerLockElement !== this.renderer.domElement) return;
       const p = this.player;
       p.yaw += e.movementX * this.sensitivity;
@@ -1868,7 +1905,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
     const game = new Game(renderer, seed);
     root.PALE_ORBIT = game;    // handy for debugging from the console
 
-    const block = new Set(["Tab", "F5", "F9", "Space"]);
+    const block = new Set(["Tab", "F5", "F9", "Space", "ArrowUp", "ArrowDown", "ArrowLeft",
+                           "ArrowRight"]);
     window.addEventListener("keydown", (e) => {
       if (block.has(e.code)) e.preventDefault();
       if (!e.repeat) game.onKey(e.code);
@@ -1877,6 +1915,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
     window.addEventListener("keyup", (e) => game.keys.delete(e.code));
     window.addEventListener("blur", () => { game.keys.clear(); game.mouseDown = false; });
     renderer.domElement.addEventListener("mousedown", (e) => {
+      if (game.map.enabled) return;            // dragging the map
       if (e.button === 0) {
         if (game.active && document.pointerLockElement) game.mouseDown = true;
         else game.onClick();
