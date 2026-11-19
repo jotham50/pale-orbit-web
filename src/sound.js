@@ -162,9 +162,8 @@
                            0.01, 0.05, 0.6),
     deflect: () => envelope(mix([tone(2400, 2300, 0.4), tone(3100, 3000, 0.4)], [1, 0.5]),
                             0.001, null, 3),
-    beep: () => concat(envelope(tone(1046, 1046, 0.12, "square"), 0.005, 0.02, 0.3),
-                       silence(0.06),
-                       envelope(tone(1046, 1046, 0.12, "square"), 0.005, 0.02, 0.3)),
+    // a soft, short sine pip (the countdown warning): subtle under the hum
+    beep: () => envelope(lowpass(tone(880, 880, 0.09), 2500), 0.008, null, 2.5),
     fanfare: () => concat(...[[523, 0.14], [659, 0.14], [784, 0.14], [1046, 0.5]].map(
       ([f, d]) => envelope(mix([tone(f, f, d, "triangle"), tone(f * 2, f * 2, d)], [1, 0.3]),
                            0.005, null, 1.2))),

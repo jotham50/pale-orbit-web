@@ -2090,8 +2090,9 @@ countdown. Chasms can only be crossed with the jetpack.`;
       if (this.moon.timeToFire < 120) {
         this.beepTimer -= dt;
         if (this.beepTimer <= 0) {
-          this.beepTimer = this.moon.timeToFire < 30 ? 1.0 : 2.0;
-          this.sfx.play("beep", .35);
+          const final = this.moon.timeToFire < 30;
+          this.beepTimer = final ? 1.0 : 2.0;
+          this.sfx.play("beep", final ? .1 : .06);
         }
       }
       this.shotTimer = Math.max(0, this.shotTimer - dt);
