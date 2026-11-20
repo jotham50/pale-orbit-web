@@ -3,8 +3,28 @@
 const fs = require("fs");
 const path = require("path");
 const rootDir = path.resolve(__dirname, "..");
-let html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
-html = html.replace(/<script src="([^"]+)"><\/script>/g, (_, src) => {
+const crypto = require("crypto");
+
+// 1. stamp index.html's script tags with a hash of each file (?v=...), so a
+//    normal refresh picks up new versions instead of a cached copy, and
+//    stamp the overall build version shown on the title screen
+let index = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+const all = crypto.createHash("sha1");
+index = index.replace(/<script src="([^"?]+)(\?v=[^"]*)?"><\/script>/g, (_, src) => {
+  const code = fs.readFileSync(path.join(rootDir, src));
+  all.update(code);
+  const v = crypto.createHash("sha1").update(code).digest("hex").slice(0, 10);
+  return `<script src="${src}?v=${v}"></script>`;
+});
+const build = all.digest("hex").slice(0, 7);
+index = index.replace(/<meta name="pale-orbit-build" content="[^"]*">/,
+                      `<meta name="pale-orbit-build" content="${build}">`);
+fs.writeFileSync(path.join(rootDir, "index.html"), index);
+console.log(`stamped index.html (build ${build})`);
+
+// 2. the single-file version
+let html = index;
+html = html.replace(/<script src="([^"?]+)(?:\?v=[^"]*)?"><\/script>/g, (_, src) => {
   const code = fs.readFileSync(path.join(rootDir, src), "utf8").replace(/<\/script/gi, "<\\/script");
   return `<script>/* ${src} */\n${code}\n</script>`;
 });

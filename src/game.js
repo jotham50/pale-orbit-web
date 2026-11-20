@@ -696,6 +696,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
       this.refreshOptions();
       if (this.readSave()) el("div", "continue", o, "[L] CONTINUE SAVED GAME");
       el("div", "begin", o, "click or press ENTER to begin");
+      const meta = document.querySelector('meta[name="pale-orbit-build"]');
+      el("div", "build", o, `version ${meta ? meta.content : "dev"}`);
     }
 
     refreshOptions() {

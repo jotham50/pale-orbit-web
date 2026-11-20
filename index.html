@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pale Orbit</title>
+<meta name="pale-orbit-build" content="7ba711f">
+<meta http-equiv="Cache-Control" content="no-cache">
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { font-family: "DejaVu Sans Mono", Consolas, Menlo, "Courier New", monospace; color: #fff;
@@ -78,6 +80,7 @@
   .option-row.on { color: rgb(140,255,170); }
   .continue { font-size: 2vh; color: rgb(153,255,179); margin: .6vh 0; }
   .begin { font-size: 2.2vh; margin-top: 2vh; }
+  .build { font-size: 1.3vh; color: rgba(255,255,255,.35); margin-top: 1vh; }
   .body { font: inherit; font-size: 2.4vh; margin: 1vh 0; }
   #nowebgl { display: none; position: fixed; inset: 0; align-items: center; justify-content: center;
              text-align: center; font-size: 2.4vh; padding: 4vh; }
@@ -87,12 +90,12 @@
 <div id="view"></div>
 <div id="ui"></div>
 <div id="nowebgl">Pale Orbit needs WebGL. Try a recent version of Chrome, Edge or Firefox.</div>
-<script src="vendor/three.min.js"></script>
-<script src="src/rng.js"></script>
-<script src="src/logic.js"></script>
-<script src="src/sound.js"></script>
-<script src="src/textures.js"></script>
-<script src="src/game.js"></script>
+<script src="vendor/three.min.js?v=91c2682614"></script>
+<script src="src/rng.js?v=5ac01af4a6"></script>
+<script src="src/logic.js?v=9399feede1"></script>
+<script src="src/sound.js?v=6879f0aeae"></script>
+<script src="src/textures.js?v=7749691d34"></script>
+<script src="src/game.js?v=8132e9b7ab"></script>
 <script>
   try { PO.boot(); } catch (e) {
     console.error(e);
