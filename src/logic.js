@@ -222,10 +222,17 @@
   const PACK_AMOUNTS = { shield: [40.0, 0.0], fuel: [0.0, 100.0], combo: [30.0, 60.0] };
 
   class PlayerState {
-    constructor() { this.shield = 100.0; this.fuel = 100.0; this.sinceHit = 99.0; }
+    constructor() {
+      this.shield = 100.0; this.fuel = 100.0; this.sinceHit = 99.0;
+      this.regen = false;     // option: slow shield regeneration
+    }
     update(dt, thrusting, grounded) {
-      // the shield never recharges by itself: only power packs restore it
+      // by default the shield never recharges by itself (only power packs);
+      // with the regeneration option it slowly recovers out of combat
       this.sinceHit += dt;
+      if (this.regen && this.sinceHit > PlayerState.SHIELD_REGEN_DELAY && this.shield > 0) {
+        this.shield = Math.min(PlayerState.MAX_SHIELD, this.shield + PlayerState.SHIELD_REGEN * dt);
+      }
       const thrust = thrusting && this.fuel > 0;
       if (thrust) this.fuel = Math.max(0.0, this.fuel - PlayerState.FUEL_BURN * dt);
       else if (grounded) this.fuel = Math.min(PlayerState.MAX_FUEL,
@@ -239,7 +246,7 @@
     damage(amount) { this.shield = Math.max(0.0, this.shield - amount); this.sinceHit = 0.0; }
   }
   Object.assign(PlayerState, { MAX_SHIELD: 100.0, MAX_FUEL: 100.0, FUEL_BURN: 22.0,
-                               FUEL_RECHARGE: 2.5 });
+                               FUEL_RECHARGE: 2.5, SHIELD_REGEN: 0.5, SHIELD_REGEN_DELAY: 10.0 });
 
   // set helpers mirroring Python set algebra
   const setOf = (it) => new Set(it);
@@ -254,6 +261,7 @@
       const o = Object.assign({
         seed: null, latticeCount: 6, minLen: 4, maxLen: 7, wardedFraction: 0.5,
         sealedCount: 3, chasmCount: 7, hunter: false, vaultCount: 2, relayCount: 3,
+        shieldRegen: false, sentryRebuild: false,
         siloChance: 0.5, fullChargeTime: Moon.FULL_CHARGE_TIME,
       }, opts);
       // seconds for the Lance to charge at full power: the game length
@@ -284,6 +292,8 @@
       this.locks = new Map();           // edge key -> slide puzzle id
       this.slides = []; this.relays = []; this.silos = []; this.relayPuzzles = [];
       this.chasms = [];
+      this.player.regen = !!o.shieldRegen;
+      this.sentryRebuild = !!o.sentryRebuild;   // option: destroyed sentries come back
       this.drone = { enabled: !!o.hunter, active: false, sector: 0, hp: 4, alive: true,
                      travelTimer: 0.0, respawnTimer: 0.0 };
       this.playerSector = 0;
@@ -1198,13 +1208,30 @@
       return [points, result];
     }
 
-    killSentry(id) { this.sentries[id].alive = false; }
+    killSentry(id) {
+      const st = this.sentries[id];
+      st.alive = false;
+      st.rebuildTimer = Moon.SENTRY_REBUILD_TIME;
+    }
+
+    _updateSentries(dt) {
+      if (!this.sentryRebuild) return;
+      for (const st of this.sentries) {
+        if (st.alive) continue;
+        st.rebuildTimer = (st.rebuildTimer ?? Moon.SENTRY_REBUILD_TIME) - dt;
+        if (st.rebuildTimer <= 0) {
+          st.alive = true;
+          this.events.push(["sentry_rebuilt", st.id]);
+        }
+      }
+    }
 
     update(dt) {
       if (this.state !== "playing") return;
       this.elapsed += dt;
       this._updateSunlight();
       this._updateDrone(dt);
+      this._updateSentries(dt);
       for (const core of this.cores) {
         if (core.alive) continue;
         if (this.willRegenerate(core)) {
@@ -1234,6 +1261,8 @@
       return {
         version: Moon.SAVE_VERSION, seed: this.seed, hunter: d.enabled,
         full_charge_time: this.fullChargeTime,
+        shield_regen: this.player.regen, sentry_rebuild: this.sentryRebuild,
+        sentry_timers: this.sentries.map((x) => x.rebuildTimer ?? 0),
         elapsed: this.elapsed, charge: this.charge, state: this.state,
         player: { shield: this.player.shield, fuel: this.player.fuel },
         player_sector: this.playerSector,
@@ -1256,7 +1285,9 @@
         throw new Error("the save is from a different version of the game");
       }
       const moon = new Moon({ seed: data.seed, hunter: data.hunter,
-                              fullChargeTime: data.full_charge_time || Moon.FULL_CHARGE_TIME });
+                              fullChargeTime: data.full_charge_time || Moon.FULL_CHARGE_TIME,
+                              shieldRegen: !!data.shield_regen,
+                              sentryRebuild: !!data.sentry_rebuild });
       moon.elapsed = data.elapsed; moon.charge = data.charge; moon.state = data.state;
       moon.player.shield = data.player.shield; moon.player.fuel = data.player.fuel;
       moon.playerSector = data.player_sector;
@@ -1265,7 +1296,10 @@
         [c.alive, c.regenTimer, c.warded, c.discovered] = data.cores[i];
       });
       moon.breakers.forEach((b, i) => { if (i in data.breakers) b.tripped = data.breakers[i]; });
-      moon.sentries.forEach((x, i) => { if (i in data.sentries) x.alive = data.sentries[i]; });
+      moon.sentries.forEach((x, i) => {
+        if (i in data.sentries) x.alive = data.sentries[i];
+        if (data.sentry_timers && i in data.sentry_timers) x.rebuildTimer = data.sentry_timers[i];
+      });
       moon.packs.forEach((p, i) => { if (i in data.packs) p.taken = data.packs[i]; });
       moon.teleporters.forEach((t, i) => {
         if (i in data.teleporters) t.active = data.teleporters[i];
@@ -1292,6 +1326,7 @@
   Object.assign(Moon, {
     // default game length: 1023 = 2**10 - 1, so the 10-bit counter ticks once a second
     FULL_CHARGE_TIME: 1023.0,
+    SENTRY_REBUILD_TIME: 90.0,
     // game lengths offered on the title screen (seconds at full power)
     GAME_LENGTHS: [600, 900, 1023, 1200, 1500, 1800, 2400], REGEN_DELAY: 1.5, PREDICT_STEP: 2.0,
     PREDICT_HORIZON: 6 * 3600.0, SAVE_VERSION: 3,

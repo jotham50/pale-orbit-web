@@ -47,8 +47,7 @@ worlds are checked against the Python version (see Development below).
 | M | mute / unmute sound |
 | F5 / F9 | save / load |
 | L | continue a saved game (title screen) |
-| D | toggle the hunter drone (title screen) |
-| T | choose the game length: 10 to 40 minutes at full power (title screen) |
+| 1-4 | title screen options: hunter drone, shield regeneration, sentries rebuild, game length (or click them) |
 | S | choose a seed (title screen) |
 | R / A / Q | after the game ends: new moon / play the same moon again / title screen |
 | Esc | pause and release the mouse (the pause menu has F5 save and Q quit to title) |
@@ -81,7 +80,8 @@ worlds are checked against the Python version (see Development below).
     off.
 - **Cross-vault lattices:** every sealed sector and vault holds a lattice
   end. One lattice per moon has an end in each, so it needs both puzzles.
-- **Survival:** the shield never recharges by itself, and turret hits cost
+- **Survival:** the shield never recharges by itself (unless you turn on
+  shield regeneration in the options), and turret hits cost
   14. Power packs restore shield and fuel. Buildings give cover.
 - **When you win,** the Lance sputters out and breaks apart on the horizon,
   then Halcyon is safe (click or Enter to skip after a few seconds).

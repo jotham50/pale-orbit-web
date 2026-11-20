@@ -71,6 +71,12 @@
   .story { font: inherit; font-size: 1.85vh; color: rgba(255,255,255,.88); margin: 1vh 0; }
   .controls { font: inherit; font-size: 1.6vh; color: rgb(255,204,128); margin: 1.5vh 0; }
   .option { font-size: 2vh; margin: .6vh 0; }
+  .options { margin: 1.2vh 0 .4vh; text-align: left; border: 1px solid rgba(255,204,128,.35);
+             padding: .8vh 1.6vh; background: rgba(255,255,255,.03); }
+  .options-title { font-size: 1.6vh; color: rgba(255,204,128,.8); margin-bottom: .6vh; }
+  .option-row { font-size: 1.8vh; color: rgba(255,255,255,.65); padding: .25vh .4vh; cursor: pointer; }
+  .option-row:hover { background: rgba(255,255,255,.08); }
+  .option-row.on { color: rgb(140,255,170); }
   .continue { font-size: 2vh; color: rgb(153,255,179); margin: .6vh 0; }
   .begin { font-size: 2.2vh; margin-top: 2vh; }
   .body { font: inherit; font-size: 2.4vh; margin: 1vh 0; }
@@ -503,10 +509,17 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   const PACK_AMOUNTS = { shield: [40.0, 0.0], fuel: [0.0, 100.0], combo: [30.0, 60.0] };
 
   class PlayerState {
-    constructor() { this.shield = 100.0; this.fuel = 100.0; this.sinceHit = 99.0; }
+    constructor() {
+      this.shield = 100.0; this.fuel = 100.0; this.sinceHit = 99.0;
+      this.regen = false;     // option: slow shield regeneration
+    }
     update(dt, thrusting, grounded) {
-      // the shield never recharges by itself: only power packs restore it
+      // by default the shield never recharges by itself (only power packs);
+      // with the regeneration option it slowly recovers out of combat
       this.sinceHit += dt;
+      if (this.regen && this.sinceHit > PlayerState.SHIELD_REGEN_DELAY && this.shield > 0) {
+        this.shield = Math.min(PlayerState.MAX_SHIELD, this.shield + PlayerState.SHIELD_REGEN * dt);
+      }
       const thrust = thrusting && this.fuel > 0;
       if (thrust) this.fuel = Math.max(0.0, this.fuel - PlayerState.FUEL_BURN * dt);
       else if (grounded) this.fuel = Math.min(PlayerState.MAX_FUEL,
@@ -520,7 +533,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     damage(amount) { this.shield = Math.max(0.0, this.shield - amount); this.sinceHit = 0.0; }
   }
   Object.assign(PlayerState, { MAX_SHIELD: 100.0, MAX_FUEL: 100.0, FUEL_BURN: 22.0,
-                               FUEL_RECHARGE: 2.5 });
+                               FUEL_RECHARGE: 2.5, SHIELD_REGEN: 0.5, SHIELD_REGEN_DELAY: 10.0 });
 
   // set helpers mirroring Python set algebra
   const setOf = (it) => new Set(it);
@@ -535,6 +548,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       const o = Object.assign({
         seed: null, latticeCount: 6, minLen: 4, maxLen: 7, wardedFraction: 0.5,
         sealedCount: 3, chasmCount: 7, hunter: false, vaultCount: 2, relayCount: 3,
+        shieldRegen: false, sentryRebuild: false,
         siloChance: 0.5, fullChargeTime: Moon.FULL_CHARGE_TIME,
       }, opts);
       // seconds for the Lance to charge at full power: the game length
@@ -565,6 +579,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       this.locks = new Map();           // edge key -> slide puzzle id
       this.slides = []; this.relays = []; this.silos = []; this.relayPuzzles = [];
       this.chasms = [];
+      this.player.regen = !!o.shieldRegen;
+      this.sentryRebuild = !!o.sentryRebuild;   // option: destroyed sentries come back
       this.drone = { enabled: !!o.hunter, active: false, sector: 0, hp: 4, alive: true,
                      travelTimer: 0.0, respawnTimer: 0.0 };
       this.playerSector = 0;
@@ -1479,13 +1495,30 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       return [points, result];
     }
 
-    killSentry(id) { this.sentries[id].alive = false; }
+    killSentry(id) {
+      const st = this.sentries[id];
+      st.alive = false;
+      st.rebuildTimer = Moon.SENTRY_REBUILD_TIME;
+    }
+
+    _updateSentries(dt) {
+      if (!this.sentryRebuild) return;
+      for (const st of this.sentries) {
+        if (st.alive) continue;
+        st.rebuildTimer = (st.rebuildTimer ?? Moon.SENTRY_REBUILD_TIME) - dt;
+        if (st.rebuildTimer <= 0) {
+          st.alive = true;
+          this.events.push(["sentry_rebuilt", st.id]);
+        }
+      }
+    }
 
     update(dt) {
       if (this.state !== "playing") return;
       this.elapsed += dt;
       this._updateSunlight();
       this._updateDrone(dt);
+      this._updateSentries(dt);
       for (const core of this.cores) {
         if (core.alive) continue;
         if (this.willRegenerate(core)) {
@@ -1515,6 +1548,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
       return {
         version: Moon.SAVE_VERSION, seed: this.seed, hunter: d.enabled,
         full_charge_time: this.fullChargeTime,
+        shield_regen: this.player.regen, sentry_rebuild: this.sentryRebuild,
+        sentry_timers: this.sentries.map((x) => x.rebuildTimer ?? 0),
         elapsed: this.elapsed, charge: this.charge, state: this.state,
         player: { shield: this.player.shield, fuel: this.player.fuel },
         player_sector: this.playerSector,
@@ -1537,7 +1572,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         throw new Error("the save is from a different version of the game");
       }
       const moon = new Moon({ seed: data.seed, hunter: data.hunter,
-                              fullChargeTime: data.full_charge_time || Moon.FULL_CHARGE_TIME });
+                              fullChargeTime: data.full_charge_time || Moon.FULL_CHARGE_TIME,
+                              shieldRegen: !!data.shield_regen,
+                              sentryRebuild: !!data.sentry_rebuild });
       moon.elapsed = data.elapsed; moon.charge = data.charge; moon.state = data.state;
       moon.player.shield = data.player.shield; moon.player.fuel = data.player.fuel;
       moon.playerSector = data.player_sector;
@@ -1546,7 +1583,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
         [c.alive, c.regenTimer, c.warded, c.discovered] = data.cores[i];
       });
       moon.breakers.forEach((b, i) => { if (i in data.breakers) b.tripped = data.breakers[i]; });
-      moon.sentries.forEach((x, i) => { if (i in data.sentries) x.alive = data.sentries[i]; });
+      moon.sentries.forEach((x, i) => {
+        if (i in data.sentries) x.alive = data.sentries[i];
+        if (data.sentry_timers && i in data.sentry_timers) x.rebuildTimer = data.sentry_timers[i];
+      });
       moon.packs.forEach((p, i) => { if (i in data.packs) p.taken = data.packs[i]; });
       moon.teleporters.forEach((t, i) => {
         if (i in data.teleporters) t.active = data.teleporters[i];
@@ -1573,6 +1613,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   Object.assign(Moon, {
     // default game length: 1023 = 2**10 - 1, so the 10-bit counter ticks once a second
     FULL_CHARGE_TIME: 1023.0,
+    SENTRY_REBUILD_TIME: 90.0,
     // game lengths offered on the title screen (seconds at full power)
     GAME_LENGTHS: [600, 900, 1023, 1200, 1500, 1800, 2400], REGEN_DELAY: 1.5, PREDICT_STEP: 2.0,
     PREDICT_HORIZON: 6 * 3600.0, SAVE_VERSION: 3,
@@ -2606,6 +2647,9 @@ countdown. Chasms can only be crossed with the jetpack.`;
       this.mouseDown = false;
       this.hunter = false;
       this.gameLength = Moon.FULL_CHARGE_TIME;   // title-screen option (seconds at full power)
+      this.shieldRegen = false;                   // title-screen option
+      this.sentryRebuild = false;                 // title-screen option
+      this.loadOptions();
       this.active = false;
       this.pausedByPointer = false;
       this.overlay = null;
@@ -2627,7 +2671,9 @@ countdown. Chasms can only be crossed with the jetpack.`;
       if (this.hud) this.hud.destroy();
       if (this.map) this.map.destroy();
       this.closeOverlay();
-      this.moon = moon || new Moon({ seed, hunter: this.hunter, fullChargeTime: this.gameLength });
+      this.moon = moon || new Moon({ seed, hunter: this.hunter, fullChargeTime: this.gameLength,
+                                     shieldRegen: this.shieldRegen,
+                                     sentryRebuild: this.sentryRebuild });
       this.droneView = null;
       this.player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, grounded: true,
                       safe: { x: 0, y: 0, z: 0 }, thrusting: false };
@@ -2681,6 +2727,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
       }
       this.hunter = moon.drone.enabled;
       this.gameLength = moon.fullChargeTime;
+      this.shieldRegen = moon.player.regen;
+      this.sentryRebuild = moon.sentryRebuild;
       this.newGame(null, moon);
       this.hud.say("Game loaded", [.6, 1, .7], 3);
       return true;
@@ -2707,26 +2755,79 @@ countdown. Chasms can only be crossed with the jetpack.`;
       el("div", "seed", o, this.seedText());
       el("pre", "story", o, STORY);
       el("pre", "controls", o, CONTROLS);
-      this.optionText = el("div", "option", o);
-      this.lengthText = el("div", "option", o);
+      const box = el("div", "options", o);
+      el("div", "options-title", box, "OPTIONS   (press the number, or click the line, to change)");
+      this.optionRows = [1, 2, 3, 4].map((k) => {
+        const row = el("div", "option-row", box);
+        row.addEventListener("mousedown", (e) => {
+          e.stopPropagation();
+          this.sfx.start();
+          this.toggleOption(k);
+        });
+        return row;
+      });
       this.refreshOptions();
       if (this.readSave()) el("div", "continue", o, "[L] CONTINUE SAVED GAME");
       el("div", "begin", o, "click or press ENTER to begin");
     }
 
     refreshOptions() {
-      if (!this.optionText) return;
-      const on = this.hunter;
-      this.optionText.textContent = `[D] HUNTER DRONE: ${on ? "ON " : "OFF"}   ` +
-        (on ? "(it hunts you once a core falls)" : "(press D to turn on)");
-      this.optionText.style.color = on ? "rgb(255,102,89)" : "rgba(255,255,255,0.6)";
-      if (this.lengthText) {
-        const len = this.gameLength;
-        const mins = len === 1023 ? "17" : String(Math.round(len / 60));
-        this.lengthText.textContent = `[T] GAME LENGTH: ${mins} MIN   ` +
-          `(the Lance's charge time at full power${len === 1023 ? "; standard" : ""})`;
-        this.lengthText.style.color = "rgb(255,204,128)";
+      if (!this.optionRows) return;
+      const len = this.gameLength;
+      const mins = len === 1023 ? "17 MIN" : `${Math.round(len / 60)} MIN`;
+      const rows = [
+        ["HUNTER DRONE", this.hunter, "hunts you sector by sector once a core falls"],
+        ["SHIELD REGENERATION", this.shieldRegen, "slowly recharges after 10 s without being hit"],
+        ["SENTRIES REBUILD", this.sentryRebuild, "destroyed sentries come back after 90 s"],
+        ["GAME LENGTH", mins, "the Lance's charge time at full power" + (len === 1023 ? " (standard)" : "")],
+      ];
+      rows.forEach(([name, value, help], i) => {
+        const row = this.optionRows[i];
+        const shown = typeof value === "boolean" ? (value ? "ON" : "OFF") : value;
+        row.textContent = `[${i + 1}] ${name.padEnd(20)} ${String(shown).padEnd(7)} ${help}`;
+        row.classList.toggle("on", value === true);
+      });
+    }
+
+    toggleOption(k) {
+      if (this.moon.state !== "playing" || this.active) return;
+      if (k === 1) {
+        this.hunter = !this.hunter;
+        this.moon.drone.enabled = this.hunter;
+      } else if (k === 2) {
+        this.shieldRegen = !this.shieldRegen;
+        this.moon.player.regen = this.shieldRegen;
+      } else if (k === 3) {
+        this.sentryRebuild = !this.sentryRebuild;
+        this.moon.sentryRebuild = this.sentryRebuild;
+      } else if (k === 4) {
+        const L = Moon.GAME_LENGTHS;
+        this.gameLength = L[(L.indexOf(this.gameLength) + 1) % L.length] || Moon.FULL_CHARGE_TIME;
+        this.moon.fullChargeTime = this.gameLength;
+        this.moon._fireCache = null;
       }
+      this.saveOptions();
+      this.refreshOptions();
+    }
+
+    /** Remember the options in this browser (they're also saved with a game). */
+    saveOptions() {
+      try {
+        localStorage.setItem("pale_orbit_options", JSON.stringify({
+          hunter: this.hunter, shieldRegen: this.shieldRegen,
+          sentryRebuild: this.sentryRebuild, gameLength: this.gameLength }));
+      } catch (e) { /* storage unavailable */ }
+    }
+
+    loadOptions() {
+      try {
+        const o = JSON.parse(localStorage.getItem("pale_orbit_options") || "null");
+        if (!o) return;
+        this.hunter = !!o.hunter;
+        this.shieldRegen = !!o.shieldRegen;
+        this.sentryRebuild = !!o.sentryRebuild;
+        if (Moon.GAME_LENGTHS.includes(o.gameLength)) this.gameLength = o.gameLength;
+      } catch (e) { /* storage unavailable */ }
     }
 
     begin(resumed = false) {
@@ -4016,6 +4117,21 @@ countdown. Chasms can only be crossed with the jetpack.`;
           this.hud.say(`GATE UNLOCKED - the way to ${m.sectors[vault].name} is open`, [1, .75, .35], 6);
           this.sfx.play("power_up", .9, .9);
           if (this.sectorId === here) this.rebuildGate(vault);
+        } else if (kind === "sentry_rebuilt") {
+          const st = m.sentries[ev[1]];
+          if (st.sector === this.sectorId) {
+            const old = this.sentryViews.find((v) => v.data === st);
+            if (old) {
+              this.colliders = this.colliders.filter((c) => !old.parts.has(c));
+              this.world.remove(old.root);
+              disposeTree(old.root);
+              this.sentryViews.splice(this.sentryViews.indexOf(old), 1);
+            }
+            this.sentryViews.push(this.buildSentry(st));
+            this.scene.updateMatrixWorld(true);
+            this.hud.say("A sentry has rebuilt itself.", [1, .6, .4]);
+            this.sfx.play("rebuild", .6, .7);
+          }
         } else if (kind === "drone_alert") {
           this.hud.say("A HUNTER DRONE has been launched. It is tracking you.", [1, .35, .3], 6);
           this.sfx.play("beep", .6, .6);
@@ -4246,17 +4362,11 @@ countdown. Chasms can only be crossed with the jetpack.`;
         const playing = this.moon.state === "playing";
         if (playing && code === "Enter") this.begin();
         else if (code === "KeyL") this.loadGame();
-        else if (playing && code === "KeyD") {
-          this.hunter = !this.hunter;
-          this.moon.drone.enabled = this.hunter;
-          this.refreshOptions();
-        } else if (playing && code === "KeyT") {
-          const L = Moon.GAME_LENGTHS;
-          this.gameLength = L[(L.indexOf(this.gameLength) + 1) % L.length] || Moon.FULL_CHARGE_TIME;
-          this.moon.fullChargeTime = this.gameLength;
-          this.moon._fireCache = null;
-          this.refreshOptions();
-        } else if (playing && code === "KeyS") {
+        else if (playing && (code === "Digit1" || code === "KeyD")) this.toggleOption(1);
+        else if (playing && code === "Digit2") this.toggleOption(2);
+        else if (playing && code === "Digit3") this.toggleOption(3);
+        else if (playing && (code === "Digit4" || code === "KeyT")) this.toggleOption(4);
+        else if (playing && code === "KeyS") {
           const v = window.prompt("Moon seed (a whole number):", String(this.moon.seed));
           if (v !== null && /^\s*\d+\s*$/.test(v)) this.newGame(parseInt(v, 10));
         } else if (!playing && code === "KeyR") this.newGame();

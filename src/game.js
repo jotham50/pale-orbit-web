@@ -574,6 +574,9 @@ countdown. Chasms can only be crossed with the jetpack.`;
       this.mouseDown = false;
       this.hunter = false;
       this.gameLength = Moon.FULL_CHARGE_TIME;   // title-screen option (seconds at full power)
+      this.shieldRegen = false;                   // title-screen option
+      this.sentryRebuild = false;                 // title-screen option
+      this.loadOptions();
       this.active = false;
       this.pausedByPointer = false;
       this.overlay = null;
@@ -595,7 +598,9 @@ countdown. Chasms can only be crossed with the jetpack.`;
       if (this.hud) this.hud.destroy();
       if (this.map) this.map.destroy();
       this.closeOverlay();
-      this.moon = moon || new Moon({ seed, hunter: this.hunter, fullChargeTime: this.gameLength });
+      this.moon = moon || new Moon({ seed, hunter: this.hunter, fullChargeTime: this.gameLength,
+                                     shieldRegen: this.shieldRegen,
+                                     sentryRebuild: this.sentryRebuild });
       this.droneView = null;
       this.player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vy: 0, grounded: true,
                       safe: { x: 0, y: 0, z: 0 }, thrusting: false };
@@ -649,6 +654,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
       }
       this.hunter = moon.drone.enabled;
       this.gameLength = moon.fullChargeTime;
+      this.shieldRegen = moon.player.regen;
+      this.sentryRebuild = moon.sentryRebuild;
       this.newGame(null, moon);
       this.hud.say("Game loaded", [.6, 1, .7], 3);
       return true;
@@ -675,26 +682,79 @@ countdown. Chasms can only be crossed with the jetpack.`;
       el("div", "seed", o, this.seedText());
       el("pre", "story", o, STORY);
       el("pre", "controls", o, CONTROLS);
-      this.optionText = el("div", "option", o);
-      this.lengthText = el("div", "option", o);
+      const box = el("div", "options", o);
+      el("div", "options-title", box, "OPTIONS   (press the number, or click the line, to change)");
+      this.optionRows = [1, 2, 3, 4].map((k) => {
+        const row = el("div", "option-row", box);
+        row.addEventListener("mousedown", (e) => {
+          e.stopPropagation();
+          this.sfx.start();
+          this.toggleOption(k);
+        });
+        return row;
+      });
       this.refreshOptions();
       if (this.readSave()) el("div", "continue", o, "[L] CONTINUE SAVED GAME");
       el("div", "begin", o, "click or press ENTER to begin");
     }
 
     refreshOptions() {
-      if (!this.optionText) return;
-      const on = this.hunter;
-      this.optionText.textContent = `[D] HUNTER DRONE: ${on ? "ON " : "OFF"}   ` +
-        (on ? "(it hunts you once a core falls)" : "(press D to turn on)");
-      this.optionText.style.color = on ? "rgb(255,102,89)" : "rgba(255,255,255,0.6)";
-      if (this.lengthText) {
-        const len = this.gameLength;
-        const mins = len === 1023 ? "17" : String(Math.round(len / 60));
-        this.lengthText.textContent = `[T] GAME LENGTH: ${mins} MIN   ` +
-          `(the Lance's charge time at full power${len === 1023 ? "; standard" : ""})`;
-        this.lengthText.style.color = "rgb(255,204,128)";
+      if (!this.optionRows) return;
+      const len = this.gameLength;
+      const mins = len === 1023 ? "17 MIN" : `${Math.round(len / 60)} MIN`;
+      const rows = [
+        ["HUNTER DRONE", this.hunter, "hunts you sector by sector once a core falls"],
+        ["SHIELD REGENERATION", this.shieldRegen, "slowly recharges after 10 s without being hit"],
+        ["SENTRIES REBUILD", this.sentryRebuild, "destroyed sentries come back after 90 s"],
+        ["GAME LENGTH", mins, "the Lance's charge time at full power" + (len === 1023 ? " (standard)" : "")],
+      ];
+      rows.forEach(([name, value, help], i) => {
+        const row = this.optionRows[i];
+        const shown = typeof value === "boolean" ? (value ? "ON" : "OFF") : value;
+        row.textContent = `[${i + 1}] ${name.padEnd(20)} ${String(shown).padEnd(7)} ${help}`;
+        row.classList.toggle("on", value === true);
+      });
+    }
+
+    toggleOption(k) {
+      if (this.moon.state !== "playing" || this.active) return;
+      if (k === 1) {
+        this.hunter = !this.hunter;
+        this.moon.drone.enabled = this.hunter;
+      } else if (k === 2) {
+        this.shieldRegen = !this.shieldRegen;
+        this.moon.player.regen = this.shieldRegen;
+      } else if (k === 3) {
+        this.sentryRebuild = !this.sentryRebuild;
+        this.moon.sentryRebuild = this.sentryRebuild;
+      } else if (k === 4) {
+        const L = Moon.GAME_LENGTHS;
+        this.gameLength = L[(L.indexOf(this.gameLength) + 1) % L.length] || Moon.FULL_CHARGE_TIME;
+        this.moon.fullChargeTime = this.gameLength;
+        this.moon._fireCache = null;
       }
+      this.saveOptions();
+      this.refreshOptions();
+    }
+
+    /** Remember the options in this browser (they're also saved with a game). */
+    saveOptions() {
+      try {
+        localStorage.setItem("pale_orbit_options", JSON.stringify({
+          hunter: this.hunter, shieldRegen: this.shieldRegen,
+          sentryRebuild: this.sentryRebuild, gameLength: this.gameLength }));
+      } catch (e) { /* storage unavailable */ }
+    }
+
+    loadOptions() {
+      try {
+        const o = JSON.parse(localStorage.getItem("pale_orbit_options") || "null");
+        if (!o) return;
+        this.hunter = !!o.hunter;
+        this.shieldRegen = !!o.shieldRegen;
+        this.sentryRebuild = !!o.sentryRebuild;
+        if (Moon.GAME_LENGTHS.includes(o.gameLength)) this.gameLength = o.gameLength;
+      } catch (e) { /* storage unavailable */ }
     }
 
     begin(resumed = false) {
@@ -1984,6 +2044,21 @@ countdown. Chasms can only be crossed with the jetpack.`;
           this.hud.say(`GATE UNLOCKED - the way to ${m.sectors[vault].name} is open`, [1, .75, .35], 6);
           this.sfx.play("power_up", .9, .9);
           if (this.sectorId === here) this.rebuildGate(vault);
+        } else if (kind === "sentry_rebuilt") {
+          const st = m.sentries[ev[1]];
+          if (st.sector === this.sectorId) {
+            const old = this.sentryViews.find((v) => v.data === st);
+            if (old) {
+              this.colliders = this.colliders.filter((c) => !old.parts.has(c));
+              this.world.remove(old.root);
+              disposeTree(old.root);
+              this.sentryViews.splice(this.sentryViews.indexOf(old), 1);
+            }
+            this.sentryViews.push(this.buildSentry(st));
+            this.scene.updateMatrixWorld(true);
+            this.hud.say("A sentry has rebuilt itself.", [1, .6, .4]);
+            this.sfx.play("rebuild", .6, .7);
+          }
         } else if (kind === "drone_alert") {
           this.hud.say("A HUNTER DRONE has been launched. It is tracking you.", [1, .35, .3], 6);
           this.sfx.play("beep", .6, .6);
@@ -2214,17 +2289,11 @@ countdown. Chasms can only be crossed with the jetpack.`;
         const playing = this.moon.state === "playing";
         if (playing && code === "Enter") this.begin();
         else if (code === "KeyL") this.loadGame();
-        else if (playing && code === "KeyD") {
-          this.hunter = !this.hunter;
-          this.moon.drone.enabled = this.hunter;
-          this.refreshOptions();
-        } else if (playing && code === "KeyT") {
-          const L = Moon.GAME_LENGTHS;
-          this.gameLength = L[(L.indexOf(this.gameLength) + 1) % L.length] || Moon.FULL_CHARGE_TIME;
-          this.moon.fullChargeTime = this.gameLength;
-          this.moon._fireCache = null;
-          this.refreshOptions();
-        } else if (playing && code === "KeyS") {
+        else if (playing && (code === "Digit1" || code === "KeyD")) this.toggleOption(1);
+        else if (playing && code === "Digit2") this.toggleOption(2);
+        else if (playing && code === "Digit3") this.toggleOption(3);
+        else if (playing && (code === "Digit4" || code === "KeyT")) this.toggleOption(4);
+        else if (playing && code === "KeyS") {
           const v = window.prompt("Moon seed (a whole number):", String(this.moon.seed));
           if (v !== null && /^\s*\d+\s*$/.test(v)) this.newGame(parseInt(v, 10));
         } else if (!playing && code === "KeyR") this.newGame();

@@ -285,3 +285,23 @@ test("game length option sets the Lance's charge time and is saved", () => {
   assert.equal(Moon.fromSave(JSON.parse(JSON.stringify(m.saveState()))).fullChargeTime, 1800);
   assert.deepEqual(L.worldSnapshot(new Moon({ seed: 5 })), L.worldSnapshot(m));   // same layout
 });
+
+test("options: shield regeneration and sentry rebuilding (off by default)", () => {
+  const off = new Moon({ seed: 9 }), on = new Moon({ seed: 9, shieldRegen: true, sentryRebuild: true });
+  for (const m of [off, on]) { m.player.damage(50); m.killSentry(0); }
+  for (let i = 0; i < 100; i++) {
+    for (const m of [off, on]) { m.update(1); m.player.update(1, false, true); m.charge = 0; }
+  }
+  assert.equal(off.player.shield, 50);
+  assert.ok(on.player.shield > 50 && on.player.shield <= 100);
+  assert.equal(off.sentries[0].alive, false);
+  assert.equal(on.sentries[0].alive, true);
+  // no regeneration in the first 10 s after a hit
+  const m = new Moon({ seed: 9, shieldRegen: true });
+  m.player.damage(30); m.player.update(5, false, true);
+  assert.equal(m.player.shield, 70);
+  // options are saved
+  const loaded = Moon.fromSave(JSON.parse(JSON.stringify(on.saveState())));
+  assert.ok(loaded.player.regen && loaded.sentryRebuild);
+  assert.deepEqual(L.worldSnapshot(off), L.worldSnapshot(new Moon({ seed: 9 })));
+});
