@@ -50,7 +50,7 @@ worlds are checked against the Python version (see Development below).
 | D | toggle the hunter drone (title screen) |
 | T | choose the game length: 10 to 40 minutes at full power (title screen) |
 | S | choose a seed (title screen) |
-| R | new moon (after the game ends) |
+| R / A / Q | after the game ends: new moon / play the same moon again / title screen |
 | Esc | pause and release the mouse (the pause menu has F5 save and Q quit to title) |
 
 ## How it plays
@@ -84,11 +84,11 @@ worlds are checked against the Python version (see Development below).
 - **Survival:** the shield never recharges by itself, and turret hits cost
   14. Power packs restore shield and fuel. Buildings give cover.
 - **When you win,** the Lance sputters out and breaks apart on the horizon,
-  then Halcyon is safe (click to skip).
+  then Halcyon is safe (click or Enter to skip after a few seconds).
 - **The Lance's hum** gets louder as it charges, and throbs faster with a
   deeper bass each time the topmost black rectangle turns red.
 - **If the Lance fires,** or you're killed and no one is left to stop it,
-  you watch it destroy Halcyon (click to skip).
+  you watch it destroy Halcyon (click or Enter to skip after a few seconds).
 - **Hunter drone (optional):** it tracks you sector by sector once the first
   core falls.
 

@@ -734,6 +734,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
     playerDeath() {
       this.active = false;
       this.finale = true;
+      this.finaleStart = performance.now();
       this.finaleReason = "shield";
       this.mouseDown = false;
       if (document.pointerLockElement) document.exitPointerLock();
@@ -759,6 +760,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
 
     lanceFinale(reason = "lance") {
       this.active = false;
+      if (!this.finale) this.finaleStart = performance.now();
       this.finale = true;
       this.finaleReason = reason;
       if (document.pointerLockElement) document.exitPointerLock();
@@ -895,6 +897,12 @@ countdown. Chasms can only be crossed with the jetpack.`;
       this.later(9.5, () => this.finishFinale());
     }
 
+    /** Ignore skip input for the first few seconds, so the click or key you
+     *  were pressing when the game ended doesn't skip the whole sequence. */
+    canSkipFinale() {
+      return performance.now() - (this.finaleStart || 0) > 4000;
+    }
+
     finishFinale() {
       if (!this.finale) return;
       this.finale = false;
@@ -907,6 +915,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
     victoryFinale() {
       this.active = false;
       this.finale = true;
+      this.finaleStart = performance.now();
       this.finaleReason = "won";
       this.mouseDown = false;
       if (document.pointerLockElement) document.exitPointerLock();
@@ -1059,7 +1068,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
         : (reason === "lance" ? "The Lance has fired. Halcyon is gone."
           : "Your shield collapsed.\nWith no one left to stop it, the Lance fired. Halcyon is gone."));
       el("div", "seed", o, this.seedText());
-      el("div", "begin", o, "press R to play a new moon");
+      el("div", "begin", o, "R  play a new moon\nA  play this moon again\nQ  title screen");
     }
 
     // ---- colliders & raycasts -------------------------------------------
@@ -2188,9 +2197,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
     // ---- input -----------------------------------------------------------
     onKey(code) {
       this.sfx.start();
-      if (this.finale) {                 // skip the destruction sequence
-        if (code === "Enter" || code === "Space") this.finishFinale();
-        else if (code === "KeyR") { this.finale = false; this.newGame(); }
+      if (this.finale) {                 // skip the sequence (Enter, after a moment)
+        if (code === "Enter" && this.canSkipFinale()) this.finishFinale();
         return;
       }
       if (this.overlay && !this.active) {
@@ -2220,6 +2228,8 @@ countdown. Chasms can only be crossed with the jetpack.`;
           const v = window.prompt("Moon seed (a whole number):", String(this.moon.seed));
           if (v !== null && /^\s*\d+\s*$/.test(v)) this.newGame(parseInt(v, 10));
         } else if (!playing && code === "KeyR") this.newGame();
+        else if (!playing && code === "KeyA") { this.newGame(this.moon.seed); this.begin(); }
+        else if (!playing && code === "KeyQ") this.newGame();
         return;
       }
       if (code === "Tab") {
@@ -2241,7 +2251,7 @@ countdown. Chasms can only be crossed with the jetpack.`;
 
     onClick() {
       this.sfx.start();
-      if (this.finale) { this.finishFinale(); return; }
+      if (this.finale) { if (this.canSkipFinale()) this.finishFinale(); return; }
       if (this.overlay && !this.active) {
         if (this.pausedByPointer) this.begin(true);
         else if (this.moon.state === "playing") this.begin();

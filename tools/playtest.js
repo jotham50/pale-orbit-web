@@ -133,12 +133,25 @@ const page_ = process.argv[2] || "index.html";
   const dying = await page.evaluate(() => [PALE_ORBIT.moon.state, PALE_ORBIT.finale, PALE_ORBIT.finaleReason]);
   check("shield at zero: the player collapses and the Lance sequence starts",
         dying[0] === "lost" && dying[1] && dying[2] === "shield", JSON.stringify(dying));
+  await page.mouse.click(400, 300);       // clicking straight away must NOT skip it
+  await step(200);
+  const notSkipped = await page.evaluate(() => PALE_ORBIT.finale);
+  check("a click right after dying doesn't skip the sequence", notSkipped);
+  await step(4000);
   await page.keyboard.press("Enter");     // skip it
   await step(300);
   const state = await page.evaluate(() => [PALE_ORBIT.moon.state, !!document.querySelector(".overlay.end"),
                                            (document.querySelector(".overlay.end .body") || {}).textContent]);
   check("skipping shows the end screen", state[0] === "lost" && state[1] && /shield collapsed/.test(state[2]),
         JSON.stringify(state));
+
+  // end screen: A replays the same moon
+  const seedBefore = await page.evaluate(() => PALE_ORBIT.moon.seed);
+  await page.keyboard.press("KeyA");
+  await step(300);
+  const replay = await page.evaluate(() => [PALE_ORBIT.moon.seed, PALE_ORBIT.moon.state, PALE_ORBIT.active]);
+  check("A on the end screen replays the same moon", replay[0] === seedBefore && replay[1] === "playing" && replay[2],
+        JSON.stringify(replay));
 
   // 6. map pauses the clock
   await page.evaluate(() => PALE_ORBIT.newGame(2026));
